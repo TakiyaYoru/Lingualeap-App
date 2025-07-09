@@ -72,177 +72,179 @@ class _ProfilePageState extends State<ProfilePage> {
         : _buildProfile(),
     );
   }
-
   Widget _buildProfile() {
-    if (user == null) {
-      return const Center(
-        child: Text('Unable to load profile'),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        children: [
-          // Profile header
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Theme.of(context).cardColor,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                // Avatar
-                CircleAvatar(
-                  radius: 40,
-                  backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
-                  child: Text(
-                    user!.displayName.isNotEmpty 
-                      ? user!.displayName[0].toUpperCase()
-                      : 'U',
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                
-                // Name and username
-                Text(
-                  user!.displayName,
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  '@${user!.username}',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                
-                // Stats
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _buildStatItem('Level', user!.currentLevel, Colors.blue),
-                    _buildStatItem('XP', '${user!.totalXP}', Colors.orange),
-                    _buildStatItem('Hearts', '${user!.hearts}/5', Colors.red),
-                    _buildStatItem('Streak', '${user!.currentStreak}', Colors.purple),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          
-          const SizedBox(height: 24),
-          
-          // Options Section
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Theme.of(context).cardColor,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Cài đặt & Tùy chọn',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _buildOptionItem(
-                  icon: Icons.settings,
-                  title: 'Cài đặt',
-                  onTap: _openSettings,
-                ),
-                const SizedBox(height: 12),
-                _buildOptionItem(
-                  icon: Icons.emoji_events,
-                  title: 'Thành tích',
-                  onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Tính năng đang phát triển')),
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
-                _buildOptionItem(
-                  icon: Icons.schedule,
-                  title: 'Lịch sử học tập',
-                  onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Tính năng đang phát triển')),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-          
-          // Account info
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Account Information',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _buildInfoRow('Email', user!.email),
-                _buildInfoRow('Subscription', user!.subscriptionType.toUpperCase()),
-                _buildInfoRow('Status', user!.isActive ? 'Active' : 'Inactive'),
-              ],
-            ),
-          ),
-        ],
-      ),
+  if (user == null) {
+    return const Center(
+      child: Text('Unable to load profile'),
     );
   }
 
+  return SingleChildScrollView(
+    physics: const BouncingScrollPhysics(),
+    padding: const EdgeInsets.all(24.0),
+    child: Column(
+      children: [
+        // Profile header
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              CircleAvatar(
+                radius: 40,
+                backgroundColor:
+                    Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                child: Text(
+                  user!.displayName.isNotEmpty
+                      ? user!.displayName[0].toUpperCase()
+                      : 'U',
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                user!.displayName,
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                '@${user!.username}',
+                style: TextStyle(
+                  fontSize: 16,
+                  color:
+                      Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildStatItem('Level', user!.currentLevel, Colors.blue),
+                  _buildStatItem('XP', '${user!.totalXP}', Colors.orange),
+                  _buildStatItem('Hearts', '${user!.hearts}/5', Colors.red),
+                  _buildStatItem(
+                      'Streak', '${user!.currentStreak}', Colors.purple),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // Options
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Cài đặt & Tùy chọn',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _buildOptionItem(
+                icon: Icons.settings,
+                title: 'Cài đặt',
+                onTap: _openSettings,
+              ),
+              const SizedBox(height: 12),
+              _buildOptionItem(
+                icon: Icons.emoji_events,
+                title: 'Thành tích',
+                onTap: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Tính năng đang phát triển')),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              _buildOptionItem(
+                icon: Icons.schedule,
+                title: 'Lịch sử học tập',
+                onTap: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Tính năng đang phát triển')),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // Account info
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Account Information',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _buildInfoRow('Email', user!.email),
+              _buildInfoRow(
+                  'Subscription', user!.subscriptionType.toUpperCase()),
+              _buildInfoRow('Status', user!.isActive ? 'Active' : 'Inactive'),
+            ],
+          ),
+        ),
+        const SizedBox(height: 32),
+      ],
+    ),
+  );
+}
+
+
+  
   Widget _buildOptionItem({
     required IconData icon,
     required String title,

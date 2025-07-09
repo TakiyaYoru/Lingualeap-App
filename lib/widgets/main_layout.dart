@@ -1,42 +1,46 @@
-// lib/shared/widgets/main_layout.dart
+// lib/widgets/main_layout.dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 class MainLayout extends StatelessWidget {
-  final Widget child;
-  final int currentIndex;
+  final StatefulNavigationShell navigationShell;
 
   const MainLayout({
     super.key,
-    required this.child,
-    required this.currentIndex,
+    required this.navigationShell,
   });
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: child,
+      body: navigationShell,
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: currentIndex,
+        currentIndex: navigationShell.currentIndex,
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: Colors.blue,
+        selectedItemColor: Theme.of(context).primaryColor,
         unselectedItemColor: Colors.grey,
-        onTap: (index) => _onTap(context, index),
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        elevation: 8,
+        onTap: (index) => _onTap(index),
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.home),
+            icon: Icon(Icons.home_outlined),
+            activeIcon: Icon(Icons.home),
             label: 'Home',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.school),
+            icon: Icon(Icons.school_outlined),
+            activeIcon: Icon(Icons.school),
             label: 'Courses',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.fitness_center),
+            icon: Icon(Icons.fitness_center_outlined),
+            activeIcon: Icon(Icons.fitness_center),
             label: 'Practice',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.person),
+            icon: Icon(Icons.person_outline),
+            activeIcon: Icon(Icons.person),
             label: 'Profile',
           ),
         ],
@@ -44,34 +48,10 @@ class MainLayout extends StatelessWidget {
     );
   }
 
-  void _onTap(BuildContext context, int index) {
-    switch (index) {
-      case 0:
-        context.go('/home');
-        break;
-      case 1:
-        context.go('/courses');
-        break;
-      case 2:
-        context.go('/practice');
-        break;
-      case 3:
-        context.go('/profile');
-        break;
-    }
+  void _onTap(int index) {
+    navigationShell.goBranch(
+      index,
+      initialLocation: index == navigationShell.currentIndex,
+    );
   }
-}
-
-// Helper function để determine current index từ location
-int getCurrentIndex(String location) {
-  if (location.startsWith('/home') || location == '/') {
-    return 0;
-  } else if (location.startsWith('/courses')) {
-    return 1;
-  } else if (location.startsWith('/practice')) {
-    return 2;
-  } else if (location.startsWith('/profile')) {
-    return 3;
-  }
-  return 0;
 }
