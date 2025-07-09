@@ -1,19 +1,32 @@
 // lib/controllers/vocabulary_controller.dart
-import 'dart:convert';
 import 'package:get/get.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/vocabulary_model.dart';
+import '../network/vocabulary_service.dart';
 
 class VocabularyController extends GetxController {
   // Observable lists
   final RxList<VocabularyWord> _allWords = <VocabularyWord>[].obs;
   final Rx<VocabularyFilter> _currentFilter = VocabularyFilter.all.obs;
   final RxBool _isLoading = false.obs;
+  final RxString _errorMessage = ''.obs;
+
+  // Stats observables
+  final RxInt _totalWords = 0.obs;
+  final RxInt _learnedWords = 0.obs;
+  final RxInt _unlearnedWords = 0.obs;
+  final RxDouble _progressPercentage = 0.0.obs;
 
   // Getters
   List<VocabularyWord> get allWords => _allWords;
   VocabularyFilter get currentFilter => _currentFilter.value;
   bool get isLoading => _isLoading.value;
+  String get errorMessage => _errorMessage.value;
+
+  // Stats getters
+  int get totalWords => _totalWords.value;
+  int get learnedWords => _learnedWords.value;
+  int get unlearnedWords => _unlearnedWords.value;
+  double get progressPercentage => _progressPercentage.value;
 
   // Filtered words based on current filter
   List<VocabularyWord> get filteredWords {
@@ -27,133 +40,265 @@ class VocabularyController extends GetxController {
     }
   }
 
-  // Statistics
-  int get totalWords => _allWords.length;
-  int get learnedWords => _allWords.where((word) => word.isLearned).length;
-  int get unlearnedWords => _allWords.where((word) => !word.isLearned).length;
-  double get progressPercentage => 
-      totalWords == 0 ? 0.0 : (learnedWords / totalWords) * 100;
-
   @override
   void onInit() {
     super.onInit();
     loadVocabulary();
-    _loadSampleData(); // Load some sample data for testing
   }
 
-  // Load vocabulary from SharedPreferences
+  // Load vocabulary from backend
   Future<void> loadVocabulary() async {
     try {
+      print('🔄 Starting loadVocabulary...');
       _isLoading.value = true;
-      final prefs = await SharedPreferences.getInstance();
-      final String? vocabularyJson = prefs.getString('vocabulary_words');
+      _errorMessage.value = '';
       
-      if (vocabularyJson != null) {
-        final List<dynamic> wordsList = json.decode(vocabularyJson);
-        _allWords.value = wordsList
-            .map((wordJson) => VocabularyWord.fromJson(wordJson))
+      print('📞 Calling VocabularyService.getMyVocabulary()...');
+      final response = await VocabularyService.getMyVocabulary();
+      
+      print('📦 Service response: $response');
+      
+      if (response != null) {
+        print('✅ Response not null, parsing ${response.length} words...');
+        
+        final words = response
+            .map((wordData) {
+              print('📝 Parsing word: $wordData');
+              return VocabularyWord.fromJson(wordData);
+            })
             .toList();
+            
+        _allWords.value = words;
+        print('💾 Set ${words.length} words to allWords');
+        
+        // Load stats as well
+        print('📊 Loading stats...');
+        await loadStats();
+        print('✅ loadVocabulary completed successfully');
+      } else {
+        print('❌ Response is null');
+        _errorMessage.value = 'Failed to load vocabulary';
+        _allWords.clear();
       }
     } catch (e) {
+      print('💥 Exception in loadVocabulary: $e');
+      _errorMessage.value = 'Error loading vocabulary: $e';
+    } finally {
+      _isLoading.value = false;
+      print('🏁 loadVocabulary finished, isLoading = false');
+    }
+  }
+
+  // Load vocabulary statistics
+  Future<void> loadStats() async {
+    try {
+      print('📊 Loading vocabulary stats...');
+      final stats = await VocabularyService.getMyVocabularyStats();
+      
+      print('📈 Raw stats from backend: $stats');
+      
+      if (stats != null) {
+        final total = stats['totalWords'] ?? 0;
+        final learned = stats['learnedWords'] ?? 0;
+        final unlearned = stats['unlearnedWords'] ?? 0;
+        final progress = (stats['progressPercentage'] ?? 0.0).toDouble();
+        
+        print('📊 Parsed stats:');
+        print('  - Total: $total');
+        print('  - Learned: $learned');
+        print('  - Unlearned: $unlearned');
+        print('  - Progress: $progress%');
+        
+        _totalWords.value = total;
+        _learnedWords.value = learned;
+        _unlearnedWords.value = unlearned;
+        _progressPercentage.value = progress;
+        
+        print('💾 Updated reactive values:');
+        print('  - _totalWords.value: ${_totalWords.value}');
+        print('  - Current allWords.length: ${_allWords.length}');
+      } else {
+        print('❌ Stats response is null');
+      }
+    } catch (e) {
+      print('💥 Error loading stats: $e');
+    }
+  }
+
+  // Add new word
+  Future<bool> addWord({
+    required String word,
+    required String meaning,
+    String? pronunciation,
+    String? example,
+    String? category,
+    int? difficulty,
+  }) async {
+    try {
+      _isLoading.value = true;
+      _errorMessage.value = '';
+
+      final response = await VocabularyService.addVocabularyWord(
+        word: word,
+        meaning: meaning,
+        pronunciation: pronunciation,
+        example: example,
+        category: category ?? 'general',
+        difficulty: difficulty ?? 1,
+      );
+
+      if (response != null) {
+        // Add to local list
+        final newWord = VocabularyWord.fromJson(response);
+        _allWords.insert(0, newWord);
+        
+        // Force full refresh instead of just loadStats
+        print('🔄 Force refreshing all data after add...');
+        await Future.delayed(Duration(milliseconds: 500)); // Wait for backend to update
+        await loadVocabulary(); // This will reload both words and stats
+        
+        Get.snackbar(
+          'Word Added',
+          '"$word" has been added to your vocabulary',
+          snackPosition: SnackPosition.BOTTOM,
+        );
+        
+        return true;
+      } else {
+        _errorMessage.value = 'Failed to add word';
+        Get.snackbar(
+          'Error',
+          'Failed to add word. Please try again.',
+          snackPosition: SnackPosition.BOTTOM,
+        );
+        return false;
+      }
+    } catch (e) {
+      _errorMessage.value = 'Error adding word: $e';
       Get.snackbar(
         'Error',
-        'Failed to load vocabulary: $e',
+        'Error adding word: $e',
         snackPosition: SnackPosition.BOTTOM,
       );
+      return false;
     } finally {
       _isLoading.value = false;
     }
   }
 
-  // Save vocabulary to SharedPreferences
-  Future<void> _saveVocabulary() async {
+  // Delete word
+  Future<bool> deleteWord(String wordId) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final String vocabularyJson = json.encode(
-        _allWords.map((word) => word.toJson()).toList(),
-      );
-      await prefs.setString('vocabulary_words', vocabularyJson);
+      print('🗑️ Controller: Deleting word $wordId');
+      _isLoading.value = true;
+      _errorMessage.value = '';
+
+      // Find word before delete for UI feedback
+      final wordIndex = _allWords.indexWhere((word) => word.id == wordId);
+      final wordToDelete = wordIndex != -1 ? _allWords[wordIndex] : null;
+      print('📝 Word to delete: ${wordToDelete?.word}');
+
+      final success = await VocabularyService.deleteVocabularyWord(wordId);
+      print('🔍 Delete service result: $success');
+
+      if (success) {
+        // Remove from local list immediately
+        if (wordIndex != -1) {
+          _allWords.removeAt(wordIndex);
+          print('✅ Removed from local list');
+        }
+        
+        // Force full refresh to ensure sync with backend
+        print('🔄 Force refreshing after delete...');
+        await Future.delayed(Duration(milliseconds: 500)); // Wait for backend
+        await loadVocabulary(); // This will reload everything from backend
+        
+        if (wordToDelete != null) {
+          Get.snackbar(
+            'Word Deleted',
+            '"${wordToDelete.word}" has been removed',
+            snackPosition: SnackPosition.BOTTOM,
+          );
+        }
+        return true;
+      } else {
+        // If delete failed, refresh to get current state
+        print('❌ Delete failed, refreshing to get current state...');
+        await loadVocabulary();
+        
+        _errorMessage.value = 'Failed to delete word';
+        Get.snackbar(
+          'Error',
+          'Failed to delete word. Please try again.',
+          snackPosition: SnackPosition.BOTTOM,
+        );
+        return false;
+      }
     } catch (e) {
+      print('💥 Exception in deleteWord: $e');
+      
+      // On error, refresh to get current state
+      await loadVocabulary();
+      
+      _errorMessage.value = 'Error deleting word: $e';
       Get.snackbar(
         'Error',
-        'Failed to save vocabulary: $e',
+        'Error deleting word: $e',
         snackPosition: SnackPosition.BOTTOM,
       );
-    }
-  }
-
-  // Add new word
-  Future<void> addWord({
-    required String word,
-    required String meaning,
-    String? pronunciation,
-    String? example,
-  }) async {
-    // Check for duplicates
-    if (_allWords.any((w) => w.word.toLowerCase() == word.toLowerCase())) {
-      Get.snackbar(
-        'Word Exists',
-        'This word is already in your vocabulary list',
-        snackPosition: SnackPosition.BOTTOM,
-      );
-      return;
-    }
-
-    final newWord = VocabularyWord(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      word: word.trim(),
-      meaning: meaning.trim(),
-      pronunciation: pronunciation?.trim(),
-      example: example?.trim(),
-      createdAt: DateTime.now(),
-    );
-
-    _allWords.insert(0, newWord); // Add to beginning of list
-    await _saveVocabulary();
-    
-    Get.snackbar(
-      'Word Added',
-      '"$word" has been added to your vocabulary',
-      snackPosition: SnackPosition.BOTTOM,
-    );
-  }
-
-  // Delete word
-  Future<void> deleteWord(String wordId) async {
-    final wordIndex = _allWords.indexWhere((word) => word.id == wordId);
-    if (wordIndex != -1) {
-      final removedWord = _allWords[wordIndex];
-      _allWords.removeAt(wordIndex);
-      await _saveVocabulary();
-      
-      Get.snackbar(
-        'Word Deleted',
-        '"${removedWord.word}" has been removed',
-        snackPosition: SnackPosition.BOTTOM,
-      );
+      return false;
+    } finally {
+      _isLoading.value = false;
+      print('🏁 Delete operation finished');
     }
   }
 
   // Toggle learned status
-  Future<void> toggleLearned(String wordId) async {
-    final wordIndex = _allWords.indexWhere((word) => word.id == wordId);
-    if (wordIndex != -1) {
-      final currentWord = _allWords[wordIndex];
-      final updatedWord = currentWord.copyWith(
-        isLearned: !currentWord.isLearned,
-        learnedAt: !currentWord.isLearned ? DateTime.now() : null,
-      );
-      
-      _allWords[wordIndex] = updatedWord;
-      await _saveVocabulary();
-      
+  Future<bool> toggleLearned(String wordId) async {
+    try {
+      _isLoading.value = true;
+      _errorMessage.value = '';
+
+      final response = await VocabularyService.toggleVocabularyLearned(wordId);
+
+      if (response != null) {
+        // Update local word
+        final wordIndex = _allWords.indexWhere((word) => word.id == wordId);
+        if (wordIndex != -1) {
+          final updatedWord = VocabularyWord.fromJson(response);
+          _allWords[wordIndex] = updatedWord;
+          
+          // Update stats
+          await loadStats();
+          
+          Get.snackbar(
+            updatedWord.isLearned ? 'Word Learned!' : 'Word Unmarked',
+            updatedWord.isLearned 
+                ? 'Great! "${updatedWord.word}" marked as learned'
+                : '"${updatedWord.word}" marked as unlearned',
+            snackPosition: SnackPosition.BOTTOM,
+          );
+        }
+        return true;
+      } else {
+        _errorMessage.value = 'Failed to update word';
+        Get.snackbar(
+          'Error',
+          'Failed to update word. Please try again.',
+          snackPosition: SnackPosition.BOTTOM,
+        );
+        return false;
+      }
+    } catch (e) {
+      _errorMessage.value = 'Error updating word: $e';
       Get.snackbar(
-        updatedWord.isLearned ? 'Word Learned!' : 'Word Unmarked',
-        updatedWord.isLearned 
-            ? 'Great! "${updatedWord.word}" marked as learned'
-            : '"${updatedWord.word}" marked as unlearned',
+        'Error',
+        'Error updating word: $e',
         snackPosition: SnackPosition.BOTTOM,
       );
+      return false;
+    } finally {
+      _isLoading.value = false;
     }
   }
 
@@ -162,52 +307,8 @@ class VocabularyController extends GetxController {
     _currentFilter.value = filter;
   }
 
-  // Clear all words
-  Future<void> clearAllWords() async {
-    _allWords.clear();
-    await _saveVocabulary();
-    Get.snackbar(
-      'All Cleared',
-      'All vocabulary words have been removed',
-      snackPosition: SnackPosition.BOTTOM,
-    );
-  }
-
-  // Load sample data for testing
-  Future<void> _loadSampleData() async {
-    // Only load if no words exist
-    if (_allWords.isEmpty) {
-      final sampleWords = [
-        VocabularyWord(
-          id: '1',
-          word: 'Serendipity',
-          meaning: 'The occurrence of events by chance in a happy way',
-          pronunciation: '/ˌserənˈdipədē/',
-          example: 'Meeting my best friend was pure serendipity.',
-          createdAt: DateTime.now().subtract(const Duration(days: 3)),
-        ),
-        VocabularyWord(
-          id: '2',
-          word: 'Ephemeral',
-          meaning: 'Lasting for a very short time',
-          pronunciation: '/əˈfem(ə)rəl/',
-          example: 'The beauty of cherry blossoms is ephemeral.',
-          createdAt: DateTime.now().subtract(const Duration(days: 2)),
-          isLearned: true,
-          learnedAt: DateTime.now().subtract(const Duration(days: 1)),
-        ),
-        VocabularyWord(
-          id: '3',
-          word: 'Resilience',
-          meaning: 'The ability to recover quickly from difficulties',
-          pronunciation: '/rəˈzilyəns/',
-          example: 'Her resilience helped her overcome all obstacles.',
-          createdAt: DateTime.now().subtract(const Duration(days: 1)),
-        ),
-      ];
-
-      _allWords.addAll(sampleWords);
-      await _saveVocabulary();
-    }
+  // Refresh data
+  Future<void> refresh() async {
+    await loadVocabulary();
   }
 }

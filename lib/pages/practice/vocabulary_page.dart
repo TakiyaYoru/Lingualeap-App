@@ -20,34 +20,69 @@ class VocabularyPage extends StatelessWidget {
         elevation: 0,
         actions: [
           IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () => controller.refresh(),
+          ),
+          IconButton(
             icon: const Icon(Icons.add),
             onPressed: () => _showAddWordDialog(context, controller),
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Statistics Card
-          _buildStatsCard(context, controller),
-          
-          // Filter Tabs
-          _buildFilterTabs(context, controller),
-          
-          // Word List
-          Expanded(
-            child: Obx(() {
-              if (controller.isLoading) {
-                return const Center(child: CircularProgressIndicator());
+      body: RefreshIndicator(
+        onRefresh: () => controller.refresh(),
+        child: Column(
+          children: [
+            // Statistics Card
+            _buildStatsCard(context, controller),
+            
+            // Filter Tabs
+            _buildFilterTabs(context, controller),
+            
+            // Error Message
+            Obx(() {
+              if (controller.errorMessage.isNotEmpty) {
+                return Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.error_outline, color: Colors.red, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          controller.errorMessage,
+                          style: TextStyle(color: Colors.red[700], fontSize: 14),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
               }
-
-              if (controller.filteredWords.isEmpty) {
-                return _buildEmptyState(context, controller);
-              }
-
-              return _buildWordList(context, controller);
+              return const SizedBox.shrink();
             }),
-          ),
-        ],
+            
+            // Word List
+            Expanded(
+              child: Obx(() {
+                if (controller.isLoading && controller.allWords.isEmpty) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (controller.filteredWords.isEmpty) {
+                  return _buildEmptyState(context, controller);
+                }
+
+                return _buildWordList(context, controller);
+              }),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -88,13 +123,27 @@ class VocabularyPage extends StatelessWidget {
                   color: Colors.white,
                 ),
               ),
-              Text(
-                '${controller.progressPercentage.toStringAsFixed(0)}%',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                ),
+              Row(
+                children: [
+                  if (controller.isLoading)
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${controller.progressPercentage.toStringAsFixed(0)}%',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -342,17 +391,38 @@ class VocabularyPage extends StatelessWidget {
               ),
             ],
             
-            // Footer with creation date
+            // Footer with metadata
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Added ${_formatDate(word.createdAt)}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
-                  ),
+                Row(
+                  children: [
+                    // Category badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).primaryColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        word.category,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Theme.of(context).primaryColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _formatDate(word.createdAt),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                      ),
+                    ),
+                  ],
                 ),
                 if (word.isLearned && word.learnedAt != null)
                   Container(
@@ -428,7 +498,7 @@ class VocabularyPage extends StatelessWidget {
             ),
             textAlign: TextAlign.center,
           ),
-          if (controller.currentFilter == VocabularyFilter.all) ...[
+          if (controller.currentFilter == VocabularyFilter.all && !controller.isLoading) ...[
             const SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: () => _showAddWordDialog(context, controller),
@@ -489,88 +559,145 @@ class VocabularyPage extends StatelessWidget {
     final meaningController = TextEditingController();
     final pronunciationController = TextEditingController();
     final exampleController = TextEditingController();
+    String selectedCategory = 'general';
+    int selectedDifficulty = 1;
 
     showDialog(
       context: context,
       builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Add New Word'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: wordController,
-                  decoration: const InputDecoration(
-                    labelText: 'Word *',
-                    hintText: 'Enter the word',
-                    border: OutlineInputBorder(),
-                  ),
-                  textCapitalization: TextCapitalization.words,
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Add New Word'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: wordController,
+                      decoration: const InputDecoration(
+                        labelText: 'Word *',
+                        hintText: 'Enter the word',
+                        border: OutlineInputBorder(),
+                      ),
+                      textCapitalization: TextCapitalization.words,
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: meaningController,
+                      decoration: const InputDecoration(
+                        labelText: 'Meaning *',
+                        hintText: 'Enter the meaning',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: pronunciationController,
+                      decoration: const InputDecoration(
+                        labelText: 'Pronunciation (optional)',
+                        hintText: '/prəˌnʌnsiˈeɪʃən/',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: exampleController,
+                      decoration: const InputDecoration(
+                        labelText: 'Example (optional)',
+                        hintText: 'Example sentence',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: selectedCategory,
+                      decoration: const InputDecoration(
+                        labelText: 'Category',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'general', child: Text('General')),
+                        DropdownMenuItem(value: 'basic', child: Text('Basic')),
+                        DropdownMenuItem(value: 'advanced', child: Text('Advanced')),
+                        DropdownMenuItem(value: 'academic', child: Text('Academic')),
+                        DropdownMenuItem(value: 'business', child: Text('Business')),
+                      ],
+                      onChanged: (value) {
+                        setState(() {
+                          selectedCategory = value ?? 'general';
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<int>(
+                      value: selectedDifficulty,
+                      decoration: const InputDecoration(
+                        labelText: 'Difficulty',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 1, child: Text('1 - Easy')),
+                        DropdownMenuItem(value: 2, child: Text('2 - Moderate')),
+                        DropdownMenuItem(value: 3, child: Text('3 - Medium')),
+                        DropdownMenuItem(value: 4, child: Text('4 - Hard')),
+                        DropdownMenuItem(value: 5, child: Text('5 - Very Hard')),
+                      ],
+                      onChanged: (value) {
+                        setState(() {
+                          selectedDifficulty = value ?? 1;
+                        });
+                      },
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: meaningController,
-                  decoration: const InputDecoration(
-                    labelText: 'Meaning *',
-                    hintText: 'Enter the meaning',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 2,
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
                 ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: pronunciationController,
-                  decoration: const InputDecoration(
-                    labelText: 'Pronunciation (optional)',
-                    hintText: '/prəˌnʌnsiˈeɪʃən/',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: exampleController,
-                  decoration: const InputDecoration(
-                    labelText: 'Example (optional)',
-                    hintText: 'Example sentence',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 2,
-                ),
+                Obx(() => ElevatedButton(
+                  onPressed: controller.isLoading ? null : () async {
+                    if (wordController.text.trim().isNotEmpty && 
+                        meaningController.text.trim().isNotEmpty) {
+                      final success = await controller.addWord(
+                        word: wordController.text.trim(),
+                        meaning: meaningController.text.trim(),
+                        pronunciation: pronunciationController.text.trim().isNotEmpty 
+                            ? pronunciationController.text.trim() 
+                            : null,
+                        example: exampleController.text.trim().isNotEmpty 
+                            ? exampleController.text.trim() 
+                            : null,
+                        category: selectedCategory,
+                        difficulty: selectedDifficulty,
+                      );
+                      
+                      if (success) {
+                        Navigator.of(context).pop();
+                      }
+                    } else {
+                      Get.snackbar(
+                        'Error',
+                        'Please fill in both word and meaning',
+                        snackPosition: SnackPosition.BOTTOM,
+                      );
+                    }
+                  },
+                  child: controller.isLoading 
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Add'),
+                )),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (wordController.text.trim().isNotEmpty && 
-                    meaningController.text.trim().isNotEmpty) {
-                  controller.addWord(
-                    word: wordController.text.trim(),
-                    meaning: meaningController.text.trim(),
-                    pronunciation: pronunciationController.text.trim().isNotEmpty 
-                        ? pronunciationController.text.trim() 
-                        : null,
-                    example: exampleController.text.trim().isNotEmpty 
-                        ? exampleController.text.trim() 
-                        : null,
-                  );
-                  Navigator.of(context).pop();
-                } else {
-                  Get.snackbar(
-                    'Error',
-                    'Please fill in both word and meaning',
-                    snackPosition: SnackPosition.BOTTOM,
-                  );
-                }
-              },
-              child: const Text('Add'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
