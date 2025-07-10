@@ -1,8 +1,9 @@
-// lib/pages/course/course_detail_page.dart - CLEAN FIXED VERSION
+// lib/pages/course/course_detail_page.dart - BULLETPROOF VERSION
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../network/course_service.dart';
 import '../../models/course_model.dart';
+import '../../utils/safe_navigator.dart'; // Import our safe navigator
 
 class CourseDetailPage extends StatefulWidget {
   final String courseId;
@@ -16,51 +17,74 @@ class CourseDetailPage extends StatefulWidget {
   State<CourseDetailPage> createState() => _CourseDetailPageState();
 }
 
-class _CourseDetailPageState extends State<CourseDetailPage> with WidgetsBindingObserver {
+class _CourseDetailPageState extends State<CourseDetailPage> {
   CourseModel? course;
   List<Map<String, dynamic>> units = [];
   bool isLoading = true;
   String errorMessage = '';
-  bool _isNavigating = false;
+  
+  // 🔥 SIMPLIFIED: Remove complex navigation state
   bool _isDisposed = false;
-  bool _isInactive = false;
-  DateTime? _lastNavigationTime;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _loadCourseDetail();
   }
 
   @override
   void dispose() {
     _isDisposed = true;
-    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    _isInactive = state != AppLifecycleState.resumed;
+  // 🔥 BULLETPROOF: Handle unit tap with SafeNavigator
+  Future<void> _handleUnitTap(Map<String, dynamic> unit) async {
+    final unitId = unit['id'] ?? '';
+    final unitTitle = unit['title'] ?? 'Unit';
+    
+    if (unitId.isEmpty) {
+      _showError('Unit ID not found');
+      return;
+    }
+
+    final route = '/unit/$unitId?title=${Uri.encodeComponent(unitTitle)}';
+    await SafeNavigator.safePush(
+      context, 
+      route,
+      debugName: 'unit_$unitId',
+    );
   }
 
-  bool _canNavigate() {
-    if (_isDisposed || _isNavigating || _isInactive || !mounted) return false;
-    
-    final now = DateTime.now();
-    if (_lastNavigationTime != null) {
-      final difference = now.difference(_lastNavigationTime!);
-      if (difference.inMilliseconds < 500) {
-        return false;
-      }
+  // 🔥 BULLETPROOF: Handle back navigation
+  Future<void> _handleBackTap() async {
+    // Try GoRouter first, then Navigator
+    if (GoRouter.of(context).canPop()) {
+      GoRouter.of(context).pop();
+    } else if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      // Last resort: go to courses page
+      context.go('/courses');
     }
+  }
+
+  void _showError(String message) {
+    if (!mounted || _isDisposed) return;
     
-    return true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   Future<void> _loadCourseDetail() async {
     try {
+      if (!mounted) return;
+      
       setState(() {
         isLoading = true;
         errorMessage = '';
@@ -68,6 +92,9 @@ class _CourseDetailPageState extends State<CourseDetailPage> with WidgetsBinding
 
       // Load course info
       final courseData = await CourseService.getCourse(widget.courseId);
+      
+      if (!mounted || _isDisposed) return;
+      
       if (courseData == null) {
         setState(() {
           errorMessage = 'Course not found';
@@ -79,12 +106,16 @@ class _CourseDetailPageState extends State<CourseDetailPage> with WidgetsBinding
       // Load course units
       final unitsData = await CourseService.getCourseUnits(widget.courseId);
       
+      if (!mounted || _isDisposed) return;
+      
       setState(() {
         course = CourseModel.fromJson(courseData);
         units = unitsData ?? [];
         isLoading = false;
       });
     } catch (e) {
+      if (!mounted || _isDisposed) return;
+      
       setState(() {
         errorMessage = 'Error loading course: $e';
         isLoading = false;
@@ -94,54 +125,25 @@ class _CourseDetailPageState extends State<CourseDetailPage> with WidgetsBinding
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        return !_isNavigating;
-      },
-      child: Scaffold(
-        backgroundColor: Theme.of(context).colorScheme.background,
-        appBar: AppBar(
-          title: Text(course?.title ?? 'Course'),
-          backgroundColor: Theme.of(context).colorScheme.surface,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios),
-            onPressed: _isNavigating ? null : () async {
-              if (!_canNavigate()) return;
-              
-              setState(() {
-                _isNavigating = true;
-                _lastNavigationTime = DateTime.now();
-              });
-              
-              try {
-                await Future.delayed(const Duration(milliseconds: 100));
-                
-                if (mounted && !_isDisposed && !_isInactive) {
-                  Navigator.of(context).pop();
-                }
-              } finally {
-                await Future.delayed(const Duration(milliseconds: 150));
-                
-                if (mounted && !_isDisposed) {
-                  setState(() {
-                    _isNavigating = false;
-                  });
-                }
-              }
-            },
-          ),
+    return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.background,
+      appBar: AppBar(
+        title: Text(course?.title ?? 'Course'),
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        elevation: 0,
+        // 🔥 BULLETPROOF: Safe back button with SafeTapWidget
+        leading: SafeTapWidget(
+          onTap: _handleBackTap,
+          child: const Icon(Icons.arrow_back_ios),
         ),
-        body: _buildBody(),
       ),
+      body: _buildBody(),
     );
   }
 
   Widget _buildBody() {
     if (isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (errorMessage.isNotEmpty) {
@@ -149,18 +151,11 @@ class _CourseDetailPageState extends State<CourseDetailPage> with WidgetsBinding
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.error_outline,
-              size: 64,
-              color: Colors.grey.shade400,
-            ),
+            Icon(Icons.error_outline, size: 64, color: Colors.grey.shade400),
             const SizedBox(height: 16),
             Text(
               errorMessage,
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey.shade600,
-              ),
+              style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
@@ -182,173 +177,80 @@ class _CourseDetailPageState extends State<CourseDetailPage> with WidgetsBinding
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Course header
           _buildCourseHeader(),
           const SizedBox(height: 24),
-          
-          // Course description
-          _buildSection(
-            Icons.description,
-            'Description',
-            Text(
-              course!.description,
-              style: const TextStyle(fontSize: 16, height: 1.5),
-            ),
-          ),
-          const SizedBox(height: 24),
-          
-          // Learning objectives
-          if (course!.learningObjectives.isNotEmpty) ...[
-            _buildSection(
-              Icons.check_circle_outline,
-              'What you\'ll learn',
-              Column(
-                children: course!.learningObjectives
-                    .map((objective) => _buildObjectiveItem(objective))
-                    .toList(),
-              ),
-            ),
-            const SizedBox(height: 24),
-          ],
-          
-          // Course units
-          _buildSection(
-            Icons.folder_outlined,
-            'Course Units (${units.length})',
-            Column(
-              children: units.map((unit) => _buildUnitCard(unit)).toList(),
-            ),
-          ),
+          _buildUnitsSection(),
         ],
       ),
     );
   }
 
   Widget _buildCourseHeader() {
-    return Row(
-      children: [
-        // Course icon
-        Container(
-          width: 80,
-          height: 80,
-          decoration: BoxDecoration(
-            color: course!.colorValue.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Icon(
-            Icons.school,
-            color: course!.colorValue,
-            size: 40,
-          ),
-        ),
-        const SizedBox(width: 16),
-        
-        // Course info
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Title
-              Text(
-                course!.title,
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              
-              // Stats row
-              Row(
-                children: [
-                  // Level badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: course!.colorValue.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      course!.level.toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: course!.colorValue,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  
-                  // Duration
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.access_time,
-                        size: 16,
-                        color: Colors.grey.shade600,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${course!.estimatedDuration}m',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSection(IconData icon, String title, Widget content) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, color: course!.colorValue),
-            const SizedBox(width: 8),
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Color(int.parse(course!.color.replaceFirst('#', '0xFF'))),
+            Color(int.parse(course!.color.replaceFirst('#', '0xFF'))).withOpacity(0.7),
           ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-        const SizedBox(height: 16),
-        content,
-      ],
-    );
-  }
-
-  Widget _buildObjectiveItem(String objective) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            margin: const EdgeInsets.only(top: 6),
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(
-              color: course!.colorValue,
-              shape: BoxShape.circle,
+          Text(
+            course!.title,
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              objective,
-              style: const TextStyle(fontSize: 16),
+          const SizedBox(height: 8),
+          Text(
+            course!.description,
+            style: const TextStyle(
+              fontSize: 16,
+              color: Colors.white70,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _buildStatChip('${course!.totalUnits} Units', Icons.folder),
+              const SizedBox(width: 12),
+              _buildStatChip('${course!.totalLessons} Lessons', Icons.book),
+              const SizedBox(width: 12),
+              _buildStatChip('${course!.estimatedDuration}min', Icons.access_time),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatChip(String label, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: Colors.white),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.white,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],
@@ -356,140 +258,192 @@ class _CourseDetailPageState extends State<CourseDetailPage> with WidgetsBinding
     );
   }
 
-  Widget _buildUnitCard(Map<String, dynamic> unit) {
+  Widget _buildUnitsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Units (${units.length})',
+          style: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 16),
+        
+        if (units.isEmpty)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(32),
+              child: Text(
+                'No units available yet',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey,
+                ),
+              ),
+            ),
+          )
+        else
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: units.length,
+            itemBuilder: (context, index) => _buildUnitCard(units[index], index),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildUnitCard(Map<String, dynamic> unit, int index) {
+    final theme = unit['theme'] ?? 'general';
+    final isUnlocked = unit['isUnlocked'] ?? (index == 0);
+    
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      child: Material(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        elevation: 1,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: (!_isNavigating) ? () => _onUnitTap(unit) : null,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                // Unit icon
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: course!.colorValue.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.folder_outlined,
-                    color: course!.colorValue,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                
-                // Unit info
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        unit['title'] ?? 'Unit',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        unit['description'] ?? '',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Text(
-                            '${unit['totalLessons'] ?? 0} lessons',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Text(
-                            '${unit['estimatedDuration'] ?? 0}m',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                
-                // Arrow icon
-                Icon(
-                  Icons.arrow_forward_ios,
-                  size: 16,
-                  color: Colors.grey.shade400,
-                ),
-              ],
+      child: SafeTapWidget(
+        // 🔥 BULLETPROOF: Safe tap with built-in debouncing
+        onTap: isUnlocked ? () => _handleUnitTap(unit) : null,
+        enabled: isUnlocked,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: isUnlocked 
+              ? Theme.of(context).colorScheme.surface
+              : Colors.grey.shade200,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isUnlocked 
+                ? Theme.of(context).primaryColor.withOpacity(0.3)
+                : Colors.grey.shade300,
             ),
+          ),
+          child: Row(
+            children: [
+              // Unit Icon
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: isUnlocked 
+                    ? _getThemeColor(theme)
+                    : Colors.grey.shade400,
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                child: Icon(
+                  _getThemeIcon(theme),
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 16),
+              
+              // Unit Info
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      unit['title'] ?? 'Unit ${index + 1}',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: isUnlocked ? null : Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      unit['description'] ?? 'Learn the basics',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: isUnlocked 
+                          ? Colors.grey.shade600 
+                          : Colors.grey.shade500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.book_outlined,
+                          size: 16,
+                          color: Colors.grey.shade500,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${unit['totalLessons'] ?? 0} lessons',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Icon(
+                          Icons.star_outline,
+                          size: 16,
+                          color: Colors.grey.shade500,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '+${unit['xpReward'] ?? 0} XP',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Status Icon
+              const SizedBox(width: 8),
+              Icon(
+                isUnlocked ? Icons.play_circle_fill : Icons.lock,
+                color: isUnlocked 
+                  ? Theme.of(context).primaryColor 
+                  : Colors.grey.shade400,
+                size: 32,
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  void _onUnitTap(Map<String, dynamic> unit) async {
-    if (!_canNavigate()) return;
-    
-    final unitId = unit['id'] ?? '';
-    final unitTitle = unit['title'] ?? 'Unit';
-    
-    if (unitId.isNotEmpty) {
-      setState(() {
-        _isNavigating = true;
-        _lastNavigationTime = DateTime.now();
-      });
-      
-      try {
-        await Future.delayed(const Duration(milliseconds: 100));
-        
-        if (_canNavigate()) {
-          // Navigate to UnitDetailPage với query parameters
-          await context.push('/unit/$unitId?title=${Uri.encodeComponent(unitTitle)}');
-        }
-      } catch (e) {
-        print('❌ Navigation error: $e');
-        if (mounted && !_isDisposed && !_isInactive) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Navigation error: $e'),
-              backgroundColor: Colors.red,
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
-      } finally {
-        await Future.delayed(const Duration(milliseconds: 150));
-        
-        if (mounted && !_isDisposed) {
-          setState(() {
-            _isNavigating = false;
-          });
-        }
-      }
-    } else {
-      // Show error if no unit ID
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Unit ID not found'),
-          duration: Duration(seconds: 2),
-        ),
-      );
+  Color _getThemeColor(String theme) {
+    switch (theme.toLowerCase()) {
+      case 'greetings':
+        return Colors.blue;
+      case 'family':
+        return Colors.green;
+      case 'food':
+        return Colors.orange;
+      case 'travel':
+        return Colors.purple;
+      case 'work':
+        return Colors.teal;
+      default:
+        return Colors.indigo;
+    }
+  }
+
+  IconData _getThemeIcon(String theme) {
+    switch (theme.toLowerCase()) {
+      case 'greetings':
+        return Icons.waving_hand;
+      case 'family':
+        return Icons.family_restroom;
+      case 'food':
+        return Icons.restaurant;
+      case 'travel':
+        return Icons.flight;
+      case 'work':
+        return Icons.work;
+      default:
+        return Icons.school;
     }
   }
 }

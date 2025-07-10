@@ -1,4 +1,4 @@
-// lib/pages/exercise/exercise_container_page.dart
+// lib/pages/exercise/exercise_container_page.dart - FIXED VERSION
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -52,8 +52,13 @@ class _ExerciseContainerPageState extends State<ExerciseContainerPage>
 
   @override
   void dispose() {
+    // 🔥 CRITICAL FIX: Mark disposed FIRST
     _isDisposed = true;
+    
+    // Dispose animation controller BEFORE calling super
     _progressAnimationController.dispose();
+    
+    // Call super.dispose() LAST
     super.dispose();
   }
 
@@ -103,7 +108,28 @@ class _ExerciseContainerPageState extends State<ExerciseContainerPage>
     }
   }
 
+  // 🔥 FIXED: Safe exit method
+  void _safeExitLesson() {
+    if (_isDisposed || !mounted) return;
+    
+    try {
+      if (GoRouter.of(context).canPop()) {
+        GoRouter.of(context).pop();
+      } else if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      } else {
+        // Last resort fallback
+        context.go('/courses');
+      }
+    } catch (e) {
+      print('❌ Safe exit error: $e');
+      // Even if navigation fails, don't crash
+    }
+  }
+
   void _updateProgress() {
+    if (_isDisposed || !mounted || _progressAnimationController.isAnimating) return;
+    
     final progress = (currentExerciseIndex + 1) / widget.exercises.length;
     _progressAnimationController.animateTo(progress);
   }
@@ -112,8 +138,13 @@ class _ExerciseContainerPageState extends State<ExerciseContainerPage>
   Widget build(BuildContext context) {
     return WillPopScope(
       onWillPop: () async {
-        if (_isNavigating) return false;
-        _showExitConfirmation();
+        if (_isDisposed || !mounted) return false;
+        
+        if (userAnswers.isEmpty) {
+          _safeExitLesson();
+        } else {
+          _showExitConfirmation();
+        }
         return false; // Always prevent default back behavior
       },
       child: Scaffold(
@@ -130,9 +161,14 @@ class _ExerciseContainerPageState extends State<ExerciseContainerPage>
       elevation: 0,
       leading: IconButton(
         icon: const Icon(Icons.close),
-        onPressed: () async {
-          if (!_canNavigate()) return;
-          _showExitConfirmation();
+        onPressed: () {
+          if (_isDisposed || !mounted) return;
+          
+          if (userAnswers.isEmpty) {
+            _safeExitLesson();
+          } else {
+            _showExitConfirmation();
+          }
         },
       ),
       title: Column(
@@ -1070,15 +1106,19 @@ class _ExerciseContainerPageState extends State<ExerciseContainerPage>
 
   void _showIncorrectFeedback() {
     // TODO: Show red error animation with correct answer
+    if (_isDisposed || !mounted) return;
+    
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Incorrect'),
         content: const Text('Try again! You can do it!'),
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.of(context).pop();
+              if (Navigator.of(dialogContext).canPop()) {
+                Navigator.of(dialogContext).pop();
+              }
             },
             child: const Text('Continue'),
           ),
@@ -1088,7 +1128,7 @@ class _ExerciseContainerPageState extends State<ExerciseContainerPage>
   }
 
   void _continueToNext() {
-    if (_isNavigating) return;
+    if (_isNavigating || _isDisposed || !mounted) return;
     
     if (currentExerciseIndex < widget.exercises.length - 1) {
       setState(() {
@@ -1104,6 +1144,8 @@ class _ExerciseContainerPageState extends State<ExerciseContainerPage>
   }
 
   void _skipExercise() {
+    if (_isDisposed || !mounted) return;
+    
     userAnswers.add({
       'exerciseId': widget.exercises[currentExerciseIndex]['id'],
       'userAnswer': null,
@@ -1114,6 +1156,8 @@ class _ExerciseContainerPageState extends State<ExerciseContainerPage>
 
   void _playAudio() {
     // TODO: Implement audio playback
+    if (_isDisposed || !mounted) return;
+    
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('🎵 Audio playback coming soon!'),
@@ -1122,30 +1166,29 @@ class _ExerciseContainerPageState extends State<ExerciseContainerPage>
     );
   }
 
+  // 🔥 FIXED: Game over dialog with safety checks
   void _showGameOver() {
-    if (_isDisposed) return;
+    if (_isDisposed || !mounted) return;
     
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => WillPopScope(
+      builder: (dialogContext) => WillPopScope(
         onWillPop: () async => false,
         child: AlertDialog(
           title: const Text('Out of Hearts!'),
           content: const Text('You\'ve run out of hearts. Try the lesson again later or get more hearts.'),
           actions: [
             TextButton(
-              onPressed: () async {
-                if (!mounted) return;
-                
-                Navigator.of(context).pop(); // Close dialog
-                await Future.delayed(const Duration(milliseconds: 200));
-                
-                if (mounted && !_isDisposed) {
-                  await _safeNavigate(() async {
-                    Navigator.of(context).pop(); // Exit exercise
-                  });
+              onPressed: () {
+                if (Navigator.of(dialogContext).canPop()) {
+                  Navigator.of(dialogContext).pop(); // Close dialog first
                 }
+                
+                // Safe exit after dialog closes
+                Future.delayed(const Duration(milliseconds: 100), () {
+                  _safeExitLesson();
+                });
               },
               child: const Text('Exit'),
             ),
@@ -1155,51 +1198,51 @@ class _ExerciseContainerPageState extends State<ExerciseContainerPage>
     );
   }
 
+  // 🔥 FIXED: Finish lesson with safety checks
   void _finishLesson() async {
+    if (_isDisposed || !mounted) return;
+    
     await _safeNavigate(() async {
       // TODO: Save progress to backend
       await Future.delayed(const Duration(milliseconds: 300)); // Simulate API call
       
-      if (mounted && !_isDisposed) {
-        Navigator.of(context).pop(); // Return to lesson detail
-      }
+      if (_isDisposed || !mounted) return; // Check again after async
+      
+      _safeExitLesson(); // Use safe exit
     });
   }
 
+  // 🔥 FIXED: Exit confirmation dialog with safety checks
   void _showExitConfirmation() {
-    if (_isDisposed) return;
+    if (_isDisposed || !mounted) return;
     
     showDialog(
       context: context,
-      barrierDismissible: false, // Prevent dismissing by tapping outside
-      builder: (context) => WillPopScope(
-        onWillPop: () async => false, // Prevent back button during dialog
+      barrierDismissible: false,
+      builder: (dialogContext) => WillPopScope(
+        onWillPop: () async => false,
         child: AlertDialog(
           title: const Text('Exit Lesson?'),
           content: const Text('Your progress will be lost if you exit now.'),
           actions: [
             TextButton(
-              onPressed: () async {
-                if (!mounted) return;
-                Navigator.of(context).pop(); // Close dialog only
+              onPressed: () {
+                if (Navigator.of(dialogContext).canPop()) {
+                  Navigator.of(dialogContext).pop(); // Close dialog only
+                }
               },
               child: const Text('Stay'),
             ),
             TextButton(
-              onPressed: () async {
-                if (!mounted) return;
-                
-                // Close dialog first
-                Navigator.of(context).pop();
-                
-                // Wait a bit then exit exercise
-                await Future.delayed(const Duration(milliseconds: 200));
-                
-                if (mounted && !_isDisposed) {
-                  await _safeNavigate(() async {
-                    Navigator.of(context).pop(); // Exit exercise
-                  });
+              onPressed: () {
+                if (Navigator.of(dialogContext).canPop()) {
+                  Navigator.of(dialogContext).pop(); // Close dialog first
                 }
+                
+                // Safe exit after dialog closes
+                Future.delayed(const Duration(milliseconds: 100), () {
+                  _safeExitLesson();
+                });
               },
               child: const Text('Exit'),
             ),
