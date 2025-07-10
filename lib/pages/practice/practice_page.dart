@@ -127,7 +127,7 @@ class PracticePage extends StatelessWidget {
                   icon: Icons.menu_book,
                   color: Colors.teal,
                   isComingSoon: true,
-                  onTap: () => _showComingSoon(context, 'Reading Practice'),
+                  onTap: () {context.push('/reading-practice');},
                 ),
               ],
             ),
@@ -252,12 +252,14 @@ class PracticePage extends StatelessWidget {
               
               const SizedBox(width: 16),
               
-              // Content
+              // Content - Fixed overflow issue
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    // Title with Coming Soon badge
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           title,
@@ -268,7 +270,7 @@ class PracticePage extends StatelessWidget {
                           ),
                         ),
                         if (isComingSoon) ...[
-                          const SizedBox(width: 8),
+                          const SizedBox(height: 4),
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
@@ -276,7 +278,7 @@ class PracticePage extends StatelessWidget {
                             ),
                             decoration: BoxDecoration(
                               color: Colors.orange.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(6),
                             ),
                             child: const Text(
                               'Coming Soon',
@@ -290,7 +292,7 @@ class PracticePage extends StatelessWidget {
                         ],
                       ],
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     Text(
                       subtitle,
                       style: TextStyle(
@@ -301,6 +303,8 @@ class PracticePage extends StatelessWidget {
                   ],
                 ),
               ),
+              
+              const SizedBox(width: 8),
               
               // Arrow
               Icon(

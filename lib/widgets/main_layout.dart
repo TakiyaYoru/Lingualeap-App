@@ -1,6 +1,7 @@
 // lib/widgets/main_layout.dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../theme/app_themes.dart';
 
 class MainLayout extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
@@ -17,8 +18,8 @@ class MainLayout extends StatelessWidget {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: navigationShell.currentIndex,
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: Theme.of(context).primaryColor,
-        unselectedItemColor: Colors.grey,
+        selectedItemColor: AppThemes.primaryGreen, // Sử dụng màu xanh trực tiếp
+        unselectedItemColor: AppThemes.systemGray,  // Sử dụng system gray
         backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 8,
         onTap: (index) => _onTap(index),

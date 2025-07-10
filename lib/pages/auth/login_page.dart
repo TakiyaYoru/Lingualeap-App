@@ -128,7 +128,7 @@ class _LoginPageState extends State<LoginPage> {
                   prefixIcon: Icon(Icons.email),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               
               // Password field
               TextField(

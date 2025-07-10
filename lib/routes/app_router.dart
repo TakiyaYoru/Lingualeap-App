@@ -1,6 +1,7 @@
 // lib/routes/app_router.dart - COMPLETE với Exercise Container
 import 'package:go_router/go_router.dart';
 import 'package:flutter/material.dart';
+import 'package:lingualeap_app/pages/practice/reading_practice_page.dart';
 
 // Import các page
 import '../pages/auth/login_page.dart';
@@ -79,6 +80,11 @@ class AppRouter {
             lessonTitle: lessonTitle,
           );
         },
+      ),
+
+      GoRoute(
+        path: '/reading-practice',
+        builder: (context, state) => const ReadingPracticePage(),
       ),
       
       // Exercise container route (no shell) ← NEW

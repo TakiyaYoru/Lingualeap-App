@@ -257,7 +257,7 @@ class _LessonDetailPageState extends State<LessonDetailPage> {
                 '${lesson!['estimatedDuration'] ?? 0}',
                 'Minutes',
               ),
-              const SizedBox(width: 24),
+              const SizedBox(width: 26),
               _buildStatItem(
                 Icons.star,
                 '+${lesson!['xpReward'] ?? 0}',
@@ -479,7 +479,7 @@ class _LessonDetailPageState extends State<LessonDetailPage> {
         
         const SizedBox(height: 20),
         
-        // Start lesson button (Duolingo style)
+        // Start lesson button 
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(

@@ -1,8 +1,7 @@
-// lib/pages/course/unit_detail_page.dart - BULLETPROOF VERSION
+// lib/pages/course/unit_detail_page.dart - FIXED VERSION
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../network/lesson_service.dart';
-import '../../utils/safe_navigator.dart'; // Import our safe navigator
 
 class UnitDetailPage extends StatefulWidget {
   final String unitId;
@@ -22,9 +21,8 @@ class _UnitDetailPageState extends State<UnitDetailPage> {
   List<Map<String, dynamic>> lessons = [];
   bool isLoading = true;
   String errorMessage = '';
-  
-  // 🔥 SIMPLIFIED: Remove complex navigation state
   bool _isDisposed = false;
+  DateTime? _lastTapTime; // Debouncing
 
   @override
   void initState() {
@@ -38,8 +36,20 @@ class _UnitDetailPageState extends State<UnitDetailPage> {
     super.dispose();
   }
 
-  // 🔥 BULLETPROOF: Handle lesson tap with SafeNavigator
+  // Debouncing helper
+  bool _canTap() {
+    final now = DateTime.now();
+    if (_lastTapTime == null || now.difference(_lastTapTime!) > const Duration(milliseconds: 500)) {
+      _lastTapTime = now;
+      return true;
+    }
+    return false;
+  }
+
+  // Handle lesson tap with debouncing
   Future<void> _handleLessonTap(Map<String, dynamic> lesson) async {
+    if (!_canTap()) return;
+    
     final lessonId = lesson['id'] ?? '';
     final lessonTitle = lesson['title'] ?? 'Lesson';
     
@@ -48,23 +58,30 @@ class _UnitDetailPageState extends State<UnitDetailPage> {
       return;
     }
 
-    final route = '/lesson/$lessonId?title=${Uri.encodeComponent(lessonTitle)}';
-    await SafeNavigator.safePush(
-      context, 
-      route,
-      debugName: 'lesson_$lessonId',
-    );
+    try {
+      final route = '/lesson/$lessonId?title=${Uri.encodeComponent(lessonTitle)}';
+      if (mounted) {
+        context.push(route);
+      }
+    } catch (e) {
+      _showError('Navigation error: $e');
+    }
   }
 
-  // 🔥 BULLETPROOF: Handle back navigation
+  // Handle back navigation
   Future<void> _handleBackTap() async {
-    // Try GoRouter first, then Navigator
-    if (GoRouter.of(context).canPop()) {
-      GoRouter.of(context).pop();
-    } else if (Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
-    } else {
-      // Last resort: go to courses page
+    if (!_canTap()) return;
+    
+    try {
+      if (GoRouter.of(context).canPop()) {
+        GoRouter.of(context).pop();
+      } else if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      } else {
+        context.go('/courses');
+      }
+    } catch (e) {
+      // Fallback navigation
       context.go('/courses');
     }
   }
@@ -128,10 +145,10 @@ class _UnitDetailPageState extends State<UnitDetailPage> {
         title: Text(widget.unitTitle),
         backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
-        // 🔥 BULLETPROOF: Safe back button with SafeTapWidget
-        leading: SafeTapWidget(
-          onTap: _handleBackTap,
-          child: const Icon(Icons.arrow_back_ios),
+        // Fixed: Use regular IconButton instead of SafeTapWidget
+        leading: IconButton(
+          onPressed: _handleBackTap,
+          icon: const Icon(Icons.arrow_back_ios),
         ),
       ),
       body: _buildBody(),
@@ -261,10 +278,9 @@ class _UnitDetailPageState extends State<UnitDetailPage> {
     
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      child: SafeTapWidget(
-        // 🔥 BULLETPROOF: Safe tap with built-in debouncing
+      child: InkWell(
         onTap: isUnlocked ? () => _handleLessonTap(lesson) : null,
-        enabled: isUnlocked,
+        borderRadius: BorderRadius.circular(12),
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -280,121 +296,119 @@ class _UnitDetailPageState extends State<UnitDetailPage> {
                     : Colors.grey.shade300),
             ),
           ),
-          child: Row(
+          child: Column(
             children: [
-              // Lesson Icon
-              Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  color: _getLessonColor(type, isUnlocked, isCompleted),
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                child: Icon(
-                  _getLessonIcon(type, isCompleted),
-                  color: Colors.white,
-                  size: 28,
-                ),
-              ),
-              const SizedBox(width: 16),
-              
-              // Lesson Info
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+              // Top row: Icon + Title + Status
+              Row(
+                children: [
+                  // Lesson Icon
+                  Container(
+                    width: 50,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      color: _getLessonColor(type, isUnlocked, isCompleted),
+                      borderRadius: BorderRadius.circular(25),
+                    ),
+                    child: Icon(
+                      _getLessonIcon(type, isCompleted),
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  
+                  // Title and completion status
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Text(
-                            lesson['title'] ?? 'Lesson ${index + 1}',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: isUnlocked ? null : Colors.grey.shade600,
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                lesson['title'] ?? 'Lesson ${index + 1}',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: isUnlocked ? null : Colors.grey.shade600,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
-                        ),
-                        if (isCompleted)
-                          const Icon(
-                            Icons.check_circle,
-                            color: Colors.green,
-                            size: 20,
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      lesson['description'] ?? 'Complete this lesson to continue',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: isUnlocked 
-                          ? Colors.grey.shade600 
-                          : Colors.grey.shade500,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.quiz_outlined,
-                          size: 16,
-                          color: Colors.grey.shade500,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${lesson['totalExercises'] ?? 0} exercises',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Icon(
-                          Icons.access_time_outlined,
-                          size: 16,
-                          color: Colors.grey.shade500,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${lesson['estimatedDuration'] ?? 5} min',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Icon(
-                          Icons.star_outline,
-                          size: 16,
-                          color: Colors.grey.shade500,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '+${lesson['xpReward'] ?? 0} XP',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade500,
-                          ),
+                            if (isCompleted)
+                              const Icon(
+                                Icons.check_circle,
+                                color: Colors.green,
+                                size: 18,
+                              ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
+                  ),
+                  
+                  const SizedBox(width: 8),
+                  
+                  // Status Icon
+                  Icon(
+                    isCompleted 
+                      ? Icons.check_circle
+                      : (isUnlocked ? Icons.play_circle_fill : Icons.lock),
+                    color: isCompleted 
+                      ? Colors.green
+                      : (isUnlocked 
+                          ? Theme.of(context).primaryColor 
+                          : Colors.grey.shade400),
+                    size: 28,
+                  ),
+                ],
+              ),
+              
+              const SizedBox(height: 8),
+              
+              // Description
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  lesson['description'] ?? 'Complete this lesson to continue',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isUnlocked 
+                      ? Colors.grey.shade600 
+                      : Colors.grey.shade500,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               
-              // Status Icon
-              const SizedBox(width: 8),
-              Icon(
-                isCompleted 
-                  ? Icons.check_circle
-                  : (isUnlocked ? Icons.play_circle_fill : Icons.lock),
-                color: isCompleted 
-                  ? Colors.green
-                  : (isUnlocked 
-                      ? Theme.of(context).primaryColor 
-                      : Colors.grey.shade400),
-                size: 32,
+              const SizedBox(height: 8),
+              
+              // Info items in separate row with proper spacing
+              Row(
+                children: [
+                  Expanded(
+                    child: Wrap(
+                      spacing: 16,
+                      runSpacing: 4,
+                      children: [
+                        _buildInfoItem(
+                          Icons.quiz_outlined,
+                          '${lesson['totalExercises'] ?? 0} ex',
+                        ),
+                        _buildInfoItem(
+                          Icons.access_time_outlined,
+                          '${lesson['estimatedDuration'] ?? 5}m',
+                        ),
+                        _buildInfoItem(
+                          Icons.star_outline,
+                          '+${lesson['xpReward'] ?? 0}',
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -440,5 +454,27 @@ class _UnitDetailPageState extends State<UnitDetailPage> {
       default:
         return Icons.school;
     }
+  }
+
+  // Helper method to build info items
+  Widget _buildInfoItem(IconData icon, String text) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          icon,
+          size: 16,
+          color: Colors.grey.shade500,
+        ),
+        const SizedBox(width: 4),
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey.shade500,
+          ),
+        ),
+      ],
+    );
   }
 }
