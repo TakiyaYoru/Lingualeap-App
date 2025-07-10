@@ -1,5 +1,6 @@
-// lib/features/courses/presentation/pages/course_detail_page.dart
+// lib/pages/course/course_detail_page.dart - CLEAN FIXED VERSION
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../../network/course_service.dart';
 import '../../models/course_model.dart';
 
@@ -15,16 +16,47 @@ class CourseDetailPage extends StatefulWidget {
   State<CourseDetailPage> createState() => _CourseDetailPageState();
 }
 
-class _CourseDetailPageState extends State<CourseDetailPage> {
+class _CourseDetailPageState extends State<CourseDetailPage> with WidgetsBindingObserver {
   CourseModel? course;
   List<Map<String, dynamic>> units = [];
   bool isLoading = true;
   String errorMessage = '';
+  bool _isNavigating = false;
+  bool _isDisposed = false;
+  bool _isInactive = false;
+  DateTime? _lastNavigationTime;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadCourseDetail();
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _isInactive = state != AppLifecycleState.resumed;
+  }
+
+  bool _canNavigate() {
+    if (_isDisposed || _isNavigating || _isInactive || !mounted) return false;
+    
+    final now = DateTime.now();
+    if (_lastNavigationTime != null) {
+      final difference = now.difference(_lastNavigationTime!);
+      if (difference.inMilliseconds < 500) {
+        return false;
+      }
+    }
+    
+    return true;
   }
 
   Future<void> _loadCourseDetail() async {
@@ -54,7 +86,7 @@ class _CourseDetailPageState extends State<CourseDetailPage> {
       });
     } catch (e) {
       setState(() {
-        errorMessage = 'Error: $e';
+        errorMessage = 'Error loading course: $e';
         isLoading = false;
       });
     }
@@ -62,265 +94,219 @@ class _CourseDetailPageState extends State<CourseDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      body: _buildBody(),
+    return WillPopScope(
+      onWillPop: () async {
+        return !_isNavigating;
+      },
+      child: Scaffold(
+        backgroundColor: Theme.of(context).colorScheme.background,
+        appBar: AppBar(
+          title: Text(course?.title ?? 'Course'),
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios),
+            onPressed: _isNavigating ? null : () async {
+              if (!_canNavigate()) return;
+              
+              setState(() {
+                _isNavigating = true;
+                _lastNavigationTime = DateTime.now();
+              });
+              
+              try {
+                await Future.delayed(const Duration(milliseconds: 100));
+                
+                if (mounted && !_isDisposed && !_isInactive) {
+                  Navigator.of(context).pop();
+                }
+              } finally {
+                await Future.delayed(const Duration(milliseconds: 150));
+                
+                if (mounted && !_isDisposed) {
+                  setState(() {
+                    _isNavigating = false;
+                  });
+                }
+              }
+            },
+          ),
+        ),
+        body: _buildBody(),
+      ),
     );
   }
 
   Widget _buildBody() {
     if (isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
     }
 
     if (errorMessage.isNotEmpty) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Course')),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 64, color: Colors.red),
-              const SizedBox(height: 16),
-              Text(errorMessage, textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _loadCourseDetail,
-                child: const Text('Retry'),
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Colors.grey.shade400,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              errorMessage,
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey.shade600,
               ),
-            ],
-          ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _loadCourseDetail,
+              child: const Text('Retry'),
+            ),
+          ],
         ),
       );
     }
 
     if (course == null) {
-      return const Scaffold(
-        body: Center(child: Text('Course not found')),
-      );
+      return const Center(child: Text('Course not found'));
     }
 
-    return CustomScrollView(
-      slivers: [
-        // App Bar with course info
-        SliverAppBar(
-          expandedHeight: 280, 
-          pinned: true,
-          backgroundColor: course!.colorValue,
-          foregroundColor: Colors.white,
-          flexibleSpace: FlexibleSpaceBar(
-            background: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    course!.colorValue,
-                    course!.colorValue.withOpacity(0.8),
-                  ],
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Course header
+          _buildCourseHeader(),
+          const SizedBox(height: 24),
+          
+          // Course description
+          _buildSection(
+            Icons.description,
+            'Description',
+            Text(
+              course!.description,
+              style: const TextStyle(fontSize: 16, height: 1.5),
+            ),
+          ),
+          const SizedBox(height: 24),
+          
+          // Learning objectives
+          if (course!.learningObjectives.isNotEmpty) ...[
+            _buildSection(
+              Icons.check_circle_outline,
+              'What you\'ll learn',
+              Column(
+                children: course!.learningObjectives
+                    .map((objective) => _buildObjectiveItem(objective))
+                    .toList(),
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+          
+          // Course units
+          _buildSection(
+            Icons.folder_outlined,
+            'Course Units (${units.length})',
+            Column(
+              children: units.map((unit) => _buildUnitCard(unit)).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCourseHeader() {
+    return Row(
+      children: [
+        // Course icon
+        Container(
+          width: 80,
+          height: 80,
+          decoration: BoxDecoration(
+            color: course!.colorValue.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Icon(
+            Icons.school,
+            color: course!.colorValue,
+            size: 40,
+          ),
+        ),
+        const SizedBox(width: 16),
+        
+        // Course info
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Title
+              Text(
+                course!.title,
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-              child: SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              const SizedBox(height: 8),
+              
+              // Stats row
+              Row(
+                children: [
+                  // Level badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: course!.colorValue.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      course!.level.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: course!.colorValue,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  
+                  // Duration
+                  Row(
                     children: [
-                      const SizedBox(height: 10), // Space for app bar
-                      
-                      // Course icon
-                      Container(
-                        width: 80,
-                        height: 80,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: const Icon(
-                          Icons.school,
-                          color: Colors.white,
-                          size: 40,
-                        ),
+                      Icon(
+                        Icons.access_time,
+                        size: 16,
+                        color: Colors.grey.shade600,
                       ),
-                      const SizedBox(height: 12),
-                      
-                      // Title and level
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              course!.title,
-                              style: const TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              course!.level,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      
-                      // Description
+                      const SizedBox(width: 4),
                       Text(
-                        course!.description,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          color: Colors.white,
+                        '${course!.estimatedDuration}m',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      
-                      // Stats
-                      Row(
-                        children: [
-                          _buildStatChip(Icons.timer, course!.durationText),
-                          const SizedBox(width: 12),
-                          _buildStatChip(Icons.folder, '${course!.totalUnits} units'),
-                          const SizedBox(width: 12),
-                          _buildStatChip(Icons.quiz, '${course!.totalExercises} exercises'),
-                        ],
                       ),
                     ],
                   ),
-                ),
+                ],
               ),
-            ),
-          ),
-        ),
-        
-        // Course content
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Learning objectives
-                _buildSection(
-                  'What you\'ll learn',
-                  Icons.lightbulb_outline,
-                  Column(
-                    children: course!.learningObjectives
-                        .map((objective) => _buildObjectiveItem(objective))
-                        .toList(),
-                  ),
-                ),
-                
-                const SizedBox(height: 24),
-                
-                // Units section
-                _buildSection(
-                  'Course Units (${units.length})',
-                  Icons.list,
-                  Column(
-                    children: units.map((unit) => _buildUnitCard(unit)).toList(),
-                  ),
-                ),
-                
-                const SizedBox(height: 24),
-                
-                // Start button
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      // TODO: Start course
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Starting course...')),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: course!.colorValue,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: const Text(
-                      'Start Learning',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            ],
           ),
         ),
       ],
     );
   }
 
-  Widget _buildCompactStatChip(IconData icon, String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: Colors.white),
-          const SizedBox(width: 3),
-          Text(
-            text,
-            style: const TextStyle(
-              fontSize: 10,
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatChip(IconData icon, String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: Colors.white),
-          const SizedBox(width: 4),
-          Text(
-            text,
-            style: const TextStyle(
-              fontSize: 12,
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSection(String title, IconData icon, Widget content) {
+  Widget _buildSection(IconData icon, String title, Widget content) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -373,81 +359,137 @@ class _CourseDetailPageState extends State<CourseDetailPage> {
   Widget _buildUnitCard(Map<String, dynamic> unit) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
+      child: Material(
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        children: [
-          // Unit icon
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: course!.colorValue.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              Icons.folder_outlined,
-              color: course!.colorValue,
-            ),
-          ),
-          const SizedBox(width: 16),
-          
-          // Unit info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        elevation: 1,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: (!_isNavigating) ? () => _onUnitTap(unit) : null,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
               children: [
-                Text(
-                  unit['title'] ?? 'Unit',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                // Unit icon
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: course!.colorValue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.folder_outlined,
+                    color: course!.colorValue,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  unit['description'] ?? '',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey.shade600,
+                const SizedBox(width: 16),
+                
+                // Unit info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        unit['title'] ?? 'Unit',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        unit['description'] ?? '',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Text(
+                            '${unit['totalLessons'] ?? 0} lessons',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Text(
+                            '${unit['estimatedDuration'] ?? 0}m',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Text(
-                      '${unit['totalLessons'] ?? 0} lessons',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Text(
-                      '${unit['estimatedDuration'] ?? 0}m',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ],
+                
+                // Arrow icon
+                Icon(
+                  Icons.arrow_forward_ios,
+                  size: 16,
+                  color: Colors.grey.shade400,
                 ),
               ],
             ),
           ),
-          
-          // Arrow
-          Icon(
-            Icons.arrow_forward_ios,
-            size: 16,
-            color: Colors.grey.shade400,
-          ),
-        ],
+        ),
       ),
     );
+  }
+
+  void _onUnitTap(Map<String, dynamic> unit) async {
+    if (!_canNavigate()) return;
+    
+    final unitId = unit['id'] ?? '';
+    final unitTitle = unit['title'] ?? 'Unit';
+    
+    if (unitId.isNotEmpty) {
+      setState(() {
+        _isNavigating = true;
+        _lastNavigationTime = DateTime.now();
+      });
+      
+      try {
+        await Future.delayed(const Duration(milliseconds: 100));
+        
+        if (_canNavigate()) {
+          // Navigate to UnitDetailPage với query parameters
+          await context.push('/unit/$unitId?title=${Uri.encodeComponent(unitTitle)}');
+        }
+      } catch (e) {
+        print('❌ Navigation error: $e');
+        if (mounted && !_isDisposed && !_isInactive) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Navigation error: $e'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } finally {
+        await Future.delayed(const Duration(milliseconds: 150));
+        
+        if (mounted && !_isDisposed) {
+          setState(() {
+            _isNavigating = false;
+          });
+        }
+      }
+    } else {
+      // Show error if no unit ID
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unit ID not found'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 }
